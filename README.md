@@ -169,6 +169,10 @@ the 190-seed headline figures used in the paper.
 
 ![Calibration](figures/fig_calibration_n100.png)
 
+![Candidate-set misspecification (Experiment G, K = 10)](figures/fig6_misspec.png)
+
+*Figure 6 of the paper — candidate-set misspecification (Experiment G, K = 10): with the candidate set restricted to conventions 0–3 (BayesHalf, 0.685), the Bayesian aggregator falls below the well-specified BayesFull (0.756) and the learned MetaAttn calibrator (0.731); the oracle reaches 0.824. Dashed line: chance (0.5).*
+
 ## Status
 
 Manuscript complete (17 pages). Preprint posting (Zenodo) is planned, not
