@@ -19,19 +19,36 @@ mappings from internal readings to messages that can invert, condition on
 context, or otherwise transform the underlying signal. A weight on a source
 cannot correct for a source that reports the opposite of what it measured.
 
+Concretely: if one agent reports `NOT` of what it measured and another
+reports the identity, averaging their messages is wrong no matter how the
+two are weighted. The fix has to decode *how* each source reports before
+combining *what* they report.
+
 ## Method
 
 A finite-grid Bayesian latent-convention aggregator: each source's
 reporting convention is treated as a latent variable and decoded jointly
 with the underlying reading, instead of weighting messages directly. The
-repository also contains structural limitation theorems (nonnegative-weight
-insufficiency, scalar insufficiency under context-dependent conventions,
-equal-reliability optimum, posterior consistency) and their proofs.
+aggregator enumerates a fixed grid over convention stability (ρ) and
+reliability (r) in full — no sampling, no randomness in the aggregator
+itself — and combines the per-source posteriors into a single belief.
+
+The repository also contains structural limitation theorems and their
+proofs (`paper/sections/theorems.tex`):
+
+- **Nonnegative-weight insufficiency** — no nonnegative weighting of
+  messages can recover the truth under convention heterogeneity.
+- **Scalar insufficiency under context-dependent conventions** — a single
+  scalar per source cannot capture a convention that conditions on
+  context.
+- **Equal-reliability optimum** and **posterior consistency** — the
+  conditions under which the Bayesian aggregator is optimal, and that it
+  converges as evidence accumulates.
 
 Ten experiments cover the convention-stability sweep (A), representation
 ablations (B), support-size scaling (C), reliability heterogeneity (D),
 multi-agent consensus (E), an LLM communication benchmark (F), a
-real-human-judgment CIFAR-10H study, candidate-set misspecification,
+real-human-judgment CIFAR-10H study, candidate-set misspecification (G),
 correlated sources (H), and the stability boundary (I) — when per-source
 decoding helps versus hurts — plus PVI-REAL (§6.13): controlled panels,
 CrowdTruth RelEx/RelDir real-convention validation with a calibrated
@@ -74,12 +91,92 @@ Headline results banked over 190 seeds (A: 100; B/C/E: 30 each), mean ±
   effort — more reasoning effort scoring worse, a deployed echo of the
   paper's noise-not-signal caution (cited in the paper, § limitations).
 
+### Experiment A — convention-stability sweep (100 seeds)
+
+Accuracy, mean ± 95% CI, from `results/analysis_n100.txt`. Bayes pulls
+away from every baseline as conventions stabilise; at ρ = 0.5 the
+population-average mapping (NoSupport) is still ahead of it.
+
+| ρ | Bayes | MetaAttn | NoSupport | SignedScalar |
+|---|---|---|---|---|
+| 0.5 | 0.6317 ± 0.0023 | 0.6206 ± 0.0028 | 0.6485 ± 0.0029 | 0.6173 ± 0.0023 |
+| 0.6 | 0.6376 ± 0.0021 | 0.6243 ± 0.0027 | 0.6174 ± 0.0026 | 0.5985 ± 0.0023 |
+| 0.7 | 0.6554 ± 0.0019 | 0.6350 ± 0.0022 | 0.5825 ± 0.0023 | 0.5892 ± 0.0025 |
+| 0.8 | 0.6809 ± 0.0019 | 0.6492 ± 0.0027 | 0.5471 ± 0.0025 | 0.5896 ± 0.0021 |
+| 0.9 | 0.7161 ± 0.0023 | 0.6756 ± 0.0030 | 0.5160 ± 0.0029 | 0.6049 ± 0.0027 |
+| 1.0 | 0.7576 ± 0.0021 | 0.7012 ± 0.0046 | 0.4831 ± 0.0037 | 0.6209 ± 0.0022 |
+
+Bayes also has the best negative log-likelihood at every ρ (0.6342 at
+ρ = 0.5 down to 0.5480 at ρ = 1.0), against 0.68–0.69 for NoSupport at
+high ρ — the posterior is better calibrated as well as more accurate.
+
+![Convention-stability sweep, 100 seeds](figures/fig1_rho_sweep_n100.png)
+
+### Experiment F — LLM communication benchmark (20 trials)
+
+Models' private beliefs are supplied rather than elicited, so this is a
+controlled communication test, not a debate. Means ± 95% CI computed
+from the banked `results/llm_benchmark.csv` (normal approximation over
+the 20 trials). Everything is near ceiling here — the informative
+comparison is against naive averaging, which trails by ~17 points.
+
+| Method | Accuracy |
+|---|---|
+| SignedScalar | 0.9950 ± 0.0067 |
+| ContextConditioned | 0.9900 ± 0.0090 |
+| Bayes | 0.9875 ± 0.0097 |
+| Oracle (reliability-weighted) | 0.9800 ± 0.0131 |
+| NaiveMean | 0.8175 ± 0.0422 |
+
+### Experiment D — reliability heterogeneity (10 seeds)
+
+Bayes is flat across reliability regimes — heterogeneity costs it
+nothing — while the no-support baseline sits ~13 points lower throughout.
+Means ± 95% CI computed from `results/expD_heterogeneity.csv`.
+
+| Reliability | Bayes | MetaAttn | NoSupport |
+|---|---|---|---|
+| Homogeneous | 0.7279 ± 0.0083 | 0.6994 ± 0.0073 | 0.5965 ± 0.0054 |
+| Moderate | 0.7267 ± 0.0106 | 0.7075 ± 0.0069 | 0.5890 ± 0.0065 |
+| Heterogeneous | 0.7312 ± 0.0070 | 0.7059 ± 0.0058 | 0.5927 ± 0.0039 |
+
+![Reliability heterogeneity](figures/fig4_reliability.png)
+
+### Experiment H — correlated sources (10 seeds)
+
+Breaking the conditional-independence assumption costs Bayes ~1.3 points
+(0.9712 → 0.9582) and preserves the ranking over every baseline; naive
+averaging stays near chance in both arms. Means ± 95% CI computed from
+`results/expH_correlated.csv`.
+
+| Arm | Bayes | ContextConditioned | SignedScalar | Naive |
+|---|---|---|---|---|
+| Independence | 0.9712 ± 0.0053 | 0.9623 ± 0.0056 | 0.8473 ± 0.0090 | 0.4490 ± 0.0132 |
+| Correlated errors | 0.9582 ± 0.0059 | 0.9502 ± 0.0049 | 0.8435 ± 0.0144 | 0.4570 ± 0.0177 |
+
+### Figures
+
+All figures are in `figures/` as PNG and PDF; the `_n100` versions are
+the 190-seed headline figures used in the paper.
+
+![Representation ablations](figures/fig2_ablation_n100.png)
+
+![Support-size scaling](figures/fig3_ksweep_n100.png)
+
+![Multi-agent consensus](figures/fig5_consensus_n100.png)
+
+![Stability boundary: population mapping vs per-source decoding](figures/figI_boundary_lines.png)
+
+![Calibration](figures/fig_calibration_n100.png)
+
 ## Status
 
 Manuscript complete (17 pages). Preprint posting (Zenodo) is planned, not
 yet done. Target venue: AAMAS 2027 workshop, Hanoi, 3–4 May 2027;
 recommended workshop paper deadline 24 January 2027. The AAMAS 2027 main
-track closed 8 October 2026, so a workshop submission is the route.
+track closed 8 October 2026, so a workshop submission is the route. This
+is a preprint citation, not a publication — the paper has not been
+published at AAMAS 2026 or anywhere else.
 
 ## Reproduce
 
